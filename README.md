@@ -7,9 +7,17 @@
 ## Overview
 hydrating is a python package for fitting hydrological rating curves. 
 
-This initial preview only provides basic powerlaw fitting.
+hydrating aims to provide an easy interface to fitting rating curve for any 
+kind of model while giving the user full control on the model parameters 
+(provided through lmfit library). hydrating also aims at providing robust methods 
+for estimating rating curve uncertainty.
 
-Development Status: Pre-Alpha. Due to personal obligations, development is mostly on pause until second half of 2023.
+This initial preview only provides basic powerlaw model fitting, see example below. 
+
+Development Status: Pre-Alpha. 
+
+**Due to personal obligations, development is mostly on pause until second half of 2023.**
+
 Consider the API unstable, it may change at short/no notice.
 
 ## Requirements and installation
@@ -19,6 +27,7 @@ Requirements:
     numpy
 	pandas
     lmfit
+    matplotlib
 
 Install from pypi using pip
 
