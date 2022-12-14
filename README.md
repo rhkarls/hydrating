@@ -14,9 +14,9 @@ for estimating rating curve uncertainty and propagate these to discharge time se
 
 This initial alpha preview only provides basic powerlaw model fitting, see example below. 
 
-Development Status: Pre-Alpha. 
-
 **Due to other commitments, development is mostly on pause until second half of 2023.**
+
+Development Status: Pre-Alpha. 
 
 Consider the API unstable, it may change at short/no notice.
 
@@ -35,8 +35,8 @@ Install from pypi using pip
 
 ## General description and example usage
 Functionality is currently limited to fitting basic powerlaw rating curve, see 
-below for examples of how once can interact with the hydrating api for basic 
-fitting.
+below for examples showing different ways how once can interact with the hydrating 
+api for basic fitting.
 
 ```python
 # imports for creating demo data
@@ -48,7 +48,7 @@ from lmfit import Parameters
 from hydrating import RatingCurve
 from hydrating.models import PowerLaw 
 
-# Test data for power law rating
+# demo data for power law rating
 a = 0.1
 b = 2.5
 h0 = 0.65
@@ -84,7 +84,7 @@ rc_c = RatingCurve(PowerLaw, initial_parameters=input_parameters)
 rc_c.fit(x=stage, y=discharge)
 Out: {'a': 0.07495641841621854, 'b': 2.6, 'h0': 0.3999999978452029}
 
-# one can also let hydrating create the parameters simpy by ommiting
+# one can also let hydrating create the parameters simpy by omitting
 # initial_parameters keyword, and then modify them
 # refer to lmfit documentation
 rc_c = RatingCurve(PowerLaw)
