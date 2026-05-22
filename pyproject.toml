@@ -1,3 +1,84 @@
 [build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+build-backend = "hatchling.build"
+requires = [ "hatchling" ]
+
+[project]
+name = "hydrating"
+version = "0.0.3"
+description = "fitting hydrological stage discharge rating curves"
+license = "MIT"
+license-files = [ "LICENSE" ]
+authors = [
+  { name = "Reinert Huseby Karlsen", email = "rhkarls@proton.me" },
+]
+requires-python = ">=3.11"
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: Implementation :: PyPy",
+]
+dependencies = [
+  "lmfit>=1.3.4",
+  "matplotlib>=3.10.9",
+  "numpy>=2.4.4",
+  "pandas>=3.0.2",
+  "pyrefly>=0.60.0",
+]
+urls.Changelog = "https://github.com/rhkarls/hydrating/blob/main/CHANGELOG.md"
+urls.Documentation = "https://github.com/rhkarls/hydrating"
+urls.Homepage = "https://github.com/rhkarls/hydrating"
+urls.Issues = "https://github.com/rhkarls/hydrating/issues"
+
+[dependency-groups]
+dev = [
+  "ipython>=8.29.0",
+  "openpyxl>=3.1.5",
+  "pandas-stubs>=3.0.0.260204",
+  "pre-commit>=4.0.1",
+  "pytest>=8.3.3",
+  "pytest-cov>=6.0.0",
+  "ruff>=0.8.2",
+]
+docs = [
+  "myst-parser>=4.0.0",
+  "sphinx>=8.1.3",
+  "sphinx-design>=0.6.1",
+  "sphinx-rtd-theme>=3.0.2",
+]
+
+[tool.uv]
+default-groups = [ "dev", "docs" ]
+exclude-newer = "15 days"
+
+[tool.ruff]
+line-length = 88
+lint.select = [
+  "B", # flake8-bugbear rules
+  "E", # pycodestyle error rules
+  "F", # pyflakes rules
+  "I", # isort rules
+  "W", # pycodestyle warning rules
+]
+lint.ignore = [
+  "E501", # line-too-long
+]
+
+[tool.numpydoc_validation]
+checks = [
+  "all",  # report on all checks
+  "ES01", # but don't require an extended summary
+  "EX01", # or examples
+  "SA01", # or a see also section
+  "SS06", # and don't require the summary to fit on one line
+]
+exclude = [  # don't report on checks for these
+  "\\\\.__init__$",
+  "\\\\.__repr__$",
+  "\\\\.__str__$",
+]
