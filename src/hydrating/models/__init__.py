@@ -1,2 +1,3 @@
 # -*- coding: utf-8 -*-
-from .models import RatingModel, PowerLaw #, VNotchWeir
+from .models import PowerLaw as PowerLaw
+from .models import RatingModel as RatingModel  # , VNotchWeir
