@@ -14,8 +14,6 @@ for estimating rating curve uncertainty and propagate these to discharge time se
 
 This initial alpha preview only provides basic powerlaw model fitting, see example below.
 
-**Due to other commitments, development is mostly on pause until second half of 2023.**
-
 Development Status: Pre-Alpha.
 
 Consider the API unstable, it may change at short/no notice.

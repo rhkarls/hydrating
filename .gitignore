@@ -104,5 +104,3 @@ ENV/
 # IDE settings
 .vscode/
 .idea/
-
-.private_notes.txt
