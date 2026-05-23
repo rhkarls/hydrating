@@ -2,7 +2,7 @@
 
 [![pypi_shield](https://img.shields.io/pypi/v/hydrating.svg)](https://pypi.org/project/hydrating/)
 [![pypi_license](https://badgen.net/pypi/license/hydrating/)](https://pypi.org/project/hydrating/)
-![tests_workflow](https://github.com/rhkarls/hydrating/actions/workflows/run_flake8_pytest.yml/badge.svg)
+![tests_workflow](https://github.com/rhkarls/hydrating/actions/workflows/run_tests.yml/badge.svg)
 
 ## Overview
 hydrating is a python package for fitting hydrological rating curves.
