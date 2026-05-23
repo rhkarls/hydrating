@@ -14,7 +14,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-05-08T12:28:34.2094422Z"
+exclude-newer = "2026-05-08T12:43:25.3737771Z"
 exclude-newer-span = "P15D"
 
 [[package]]
@@ -478,7 +478,7 @@ wheels = [
 
 [[package]]
 name = "hydrating"
-version = "0.0.4"
+version = "0.0.5"
 source = { editable = "." }
 dependencies = [
     { name = "lmfit" },
