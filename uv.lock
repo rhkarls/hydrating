@@ -14,7 +14,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-05-08T11:43:21.3972913Z"
+exclude-newer = "2026-05-08T12:28:34.2094422Z"
 exclude-newer-span = "P15D"
 
 [[package]]
@@ -478,14 +478,13 @@ wheels = [
 
 [[package]]
 name = "hydrating"
-version = "0.0.3"
+version = "0.0.4"
 source = { editable = "." }
 dependencies = [
     { name = "lmfit" },
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "pandas" },
-    { name = "pyrefly" },
 ]
 
 [package.dev-dependencies]
@@ -494,6 +493,7 @@ dev = [
     { name = "openpyxl" },
     { name = "pandas-stubs" },
     { name = "pre-commit" },
+    { name = "pyrefly" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
@@ -512,7 +512,6 @@ requires-dist = [
     { name = "matplotlib", specifier = ">=3.10.9" },
     { name = "numpy", specifier = ">=2.4.4" },
     { name = "pandas", specifier = ">=3.0.2" },
-    { name = "pyrefly", specifier = ">=0.60.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -521,6 +520,7 @@ dev = [
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pandas-stubs", specifier = ">=3.0.0.260204" },
     { name = "pre-commit", specifier = ">=4.0.1" },
+    { name = "pyrefly", specifier = ">=0.60.0" },
     { name = "pytest", specifier = ">=8.3.3" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "ruff", specifier = ">=0.8.2" },
