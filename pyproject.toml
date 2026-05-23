@@ -4,8 +4,9 @@ requires = [ "hatchling" ]
 
 [project]
 name = "hydrating"
-version = "0.0.4"
+version = "0.0.5"
 description = "fitting hydrological stage discharge rating curves"
+readme = "README.md"
 license = "MIT"
 license-files = [ "LICENSE" ]
 authors = [
