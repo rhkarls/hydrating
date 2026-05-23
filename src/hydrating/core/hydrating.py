@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from ..models import RatingModel
+from hydrating.models import RatingModel
 
 # from .grades import Grades
 
