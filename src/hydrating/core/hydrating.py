@@ -49,17 +49,18 @@ class RatingCurve:
         Name of the discharge column.
     enabled : str, default "enabled"
         Name of the column controlling whether rows are active, meaning if a measurement should be used to fit the model.
-    metadata : Any, optional
+        If not provided, a column named "enabled" is added to the data with a boolean mask indicating which rows are active.
+    metadata : dataframe or series-like, optional
         Additional metadata retained with the stage-discharge pairs, for example, method, date and time, and so on.
     """
 
     def __init__(
         self,
-        data,
+        data: pd.DataFrame,
         h: str,
         q: str,
         enabled: str = "enabled",
-        metadata: Any | None = None,
+        metadata: pd.DataFrame | pd.Series | list[Any] | np.ndarray | None = None,
     ):
         self.data = self._copy_data(data)
         self.h_col = h
@@ -188,7 +189,7 @@ class RatingCurve:
         return self
 
     @staticmethod
-    def _copy_data(data):
+    def _copy_data(data) -> pd.DataFrame:
         if hasattr(data, "copy"):
             return data.copy()
         return pd.DataFrame(data)
