@@ -22,8 +22,14 @@ class Fit:
     """Named fit result."""
 
     name: str
+    model: Any
+    backend: str
+    result_: Any
+    active_data_: pd.DataFrame
+    h_col: str
+    q_col: str
 
-
+# TODO move out of this file
 class LmfitBackend:
     """Internal lmfit backend."""
 
@@ -31,7 +37,17 @@ class LmfitBackend:
 
     def fit(self, *, model, h, q, uncertainty=None, **options):
         """Fit a model using lmfit."""
-        raise NotImplementedError("LmfitBackend.fit() is not implemented yet.")
+        if uncertainty is not None:
+            raise NotImplementedError(
+                "uncertainty not yet implementation, pass as None."
+            )
+
+        h_values = np.asarray(h, dtype=float)
+        q_values = np.asarray(q, dtype=float)
+        parameters = model.constrain_parameters(h_values, q_values).copy()
+        lmfit_model = model.create_lmfit_model()
+
+        return lmfit_model.fit(q_values, params=parameters, h=h_values, **options)
 
 
 # TODO should the uncertainty column be set here? (can be None)
@@ -82,6 +98,66 @@ class RatingCurve:
     def active_data(self) -> pd.DataFrame:
         """Rows currently enabled for fitting."""
         return self.data.loc[self.data[self.enabled_col]].copy()
+
+    def fit(
+        self,
+        name: str,
+        *,
+        model,
+        uncertainty=None,
+        backend: str = "lmfit",
+        overwrite: bool = False,
+        **lmfit_options,
+    ) -> Fit:
+        """
+        Fit a model to currently enabled stage-discharge pairs.
+
+        Parameters
+        ----------
+        name : str
+            Name used to store the fit.
+        model
+            Rating model with the hydrating model interface.
+        uncertainty : optional
+            Discharge gauging uncertainty. Currently not implemented.
+        backend : {"lmfit"}, default "lmfit"
+            Fitting backend.
+        overwrite : bool, default False
+            Whether an existing fit with the same name may be replaced.
+        **lmfit_options
+            Additional keyword arguments passed to ``lmfit.Model.fit``.
+
+        Returns
+        -------
+        Fit
+            A Fit object.
+        """
+        if backend != LmfitBackend.name:
+            raise NotImplementedError(f"Unsupported backend: {backend!r}.")
+        if name in self.fits and not overwrite:
+            raise ValueError(f"Fit {name!r} already exists.")
+
+        active_data = self.active_data
+        backend_inst = LmfitBackend()
+        result = backend_inst.fit(
+            model=model,
+            h=active_data[self.h_col].to_numpy(),
+            q=active_data[self.q_col].to_numpy(),
+            uncertainty=uncertainty,
+            **lmfit_options,
+        )
+        fit = Fit(
+            name=name,
+            model=model,
+            backend=backend,
+            result_=result,
+            active_data_=active_data,
+            h_col=self.h_col,
+            q_col=self.q_col,
+        )
+        self.fits[name] = fit
+
+        return fit
 
     def enable(self, mask: BooleanMask) -> RatingCurve:
         """
