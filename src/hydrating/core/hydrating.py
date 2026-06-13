@@ -6,7 +6,7 @@ Core rating-curve objects.
 from __future__ import annotations
 
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Hashable, TypeAlias, cast
 
 import numpy as np
@@ -28,6 +28,31 @@ class Fit:
     active_data_: pd.DataFrame
     h_col: str
     q_col: str
+    params_: dict[str, float] = field(init=False)
+
+    def __post_init__(self):
+        self.active_data_ = self.active_data_.copy(deep=True)
+        self.params_ = {
+            name: float(parameter.value) for name, parameter in self.result_.params.items()
+        }
+
+    def predict(self, h):
+        """
+        Predict discharge for stage values using fitted parameters.
+
+        Parameters
+        ----------
+        h : array-like
+            Stage values.
+
+        Returns
+        -------
+        np.ndarray
+            Predicted discharge values.
+        """
+        h_values = np.asarray(h, dtype=float)
+        return np.asarray(self.model.func(h_values, **self.params_), dtype=float)
+
 
 # TODO move out of this file
 class LmfitBackend:
