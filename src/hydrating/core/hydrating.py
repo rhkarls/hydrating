@@ -30,13 +30,26 @@ class Fit:
     q_col: str
     params_: dict[str, float] = field(init=False)
     derived_params_: dict[str, float] = field(init=False)
+    aic: float = field(init=False)
+    bic: float = field(init=False)
+    redchi: float = field(init=False)
+    r2: float = field(init=False)
+    mean_absolute_error: float = field(init=False)
+    mean_percentage_error: float = field(init=False)
+    mean_absolute_percentage_error: float = field(init=False)
 
     def __post_init__(self):
         self.active_data_ = self.active_data_.copy(deep=True)
         self.params_ = {
-            name: float(parameter.value) for name, parameter in self.result_.params.items()
+            name: float(parameter.value)
+            for name, parameter in self.result_.params.items()
         }
         self.derived_params_ = self._derived_parameters()
+        self.aic = float(self.result_.aic)
+        self.bic = float(self.result_.bic)
+        self.redchi = float(self.result_.redchi)
+        self.r2 = float(self.result_.rsquared)
+        self._calculate_metrics()
 
     def predict(self, h):
         """
@@ -55,6 +68,23 @@ class Fit:
         h_values = np.asarray(h, dtype=float)
         return np.asarray(self.model.func(h_values, **self.params_), dtype=float)
 
+    def _calculate_metrics(self):
+        observed = self.active_data_[self.q_col].to_numpy(dtype=float)
+        predicted = self.predict(self.active_data_[self.h_col].to_numpy(dtype=float))
+        residuals = predicted - observed
+
+        self.mean_absolute_error = float(np.mean(np.abs(residuals)))
+
+        nonzero = observed != 0
+        if np.any(nonzero):
+            percentage_errors = residuals[nonzero] / observed[nonzero] * 100.0
+            self.mean_percentage_error = float(np.mean(percentage_errors))
+            self.mean_absolute_percentage_error = float(
+                np.mean(np.abs(percentage_errors))
+            )
+        else:
+            self.mean_percentage_error = np.nan
+            self.mean_absolute_percentage_error = np.nan
 
     def _derived_parameters(self) -> dict[str, float]:
         if not hasattr(self.model, "derived_parameters"):
@@ -117,7 +147,7 @@ class RatingCurve:
         self.q_col = q
         self.enabled_col = enabled
         self.metadata = metadata
-        self.fits = OrderedDict()
+        self.fits = OrderedDict()  # TODO maybe we can just use regular
 
         self._validate_required_columns()
         if self.enabled_col not in self.data.columns:
