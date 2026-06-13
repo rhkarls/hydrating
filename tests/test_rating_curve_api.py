@@ -224,6 +224,62 @@ def test_enable_reset_restores_constructor_mask_when_enabled_column_existed():
     assert rc.active_data["stage"].tolist() == [1.0, 3.0]
 
 
+def test_fit_requires_model_argument(powerlaw_data):
+    rc = RatingCurve(data=powerlaw_data, h="stage", q="discharge")
+
+    with pytest.raises(TypeError, match="model"):
+        # pyrefly: ignore [missing-argument]
+        rc.fit("missing-model")
+
+
+def test_fit_rejects_unsupported_backend(powerlaw_data):
+    rc = RatingCurve(data=powerlaw_data, h="stage", q="discharge")
+
+    with pytest.raises(NotImplementedError, match="Unsupported backend"):
+        rc.fit("base", model=models.PowerLaw(), backend="other")
+
+
+def test_fit_stores_named_fit(powerlaw_data):
+    rc = RatingCurve(data=powerlaw_data, h="stage", q="discharge")
+
+    fit = rc.fit("base", model=models.PowerLaw())
+
+    assert fit.name == "base"
+    assert fit.backend == "lmfit"
+    assert fit.result_.success
+    assert rc.fits["base"] is fit
+
+
+def test_fit_rejects_duplicate_name_without_overwrite(powerlaw_data):
+    rc = RatingCurve(data=powerlaw_data, h="stage", q="discharge")
+    rc.fit("base", model=models.PowerLaw())
+
+    with pytest.raises(ValueError, match="already exists"):
+        rc.fit("base", model=models.PowerLaw())
+
+
+def test_fit_overwrite_replaces_existing_fit(powerlaw_data):
+    rc = RatingCurve(data=powerlaw_data, h="stage", q="discharge")
+    first = rc.fit("base", model=models.PowerLaw())
+
+    second = rc.fit("base", model=models.PowerLaw(), overwrite=True)
+
+    assert second is not first
+    assert rc.fits["base"] is second
+
+
+def test_fit_snapshots_enabled_rows(powerlaw_data):
+    data = powerlaw_data.copy()
+    data["method"] = ["adcp", "adcp", "float", "float", "adcp"]
+    rc = RatingCurve(data=data, h="stage", q="discharge")
+
+    fit = rc.enable_where(method="adcp").fit("adcp", model=models.PowerLaw())
+    rc.enable_all()
+
+    assert fit.active_data_["stage"].tolist() == [1.0, 2.0, 5.0]
+    assert rc.active_data["stage"].tolist() == [1.0, 2.0, 3.0, 4.0, 5.0]
+
+
 def test_public_imports_work():
     assert RatingCurve is not None
     assert models.PowerLaw is not None
