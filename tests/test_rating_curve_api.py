@@ -369,7 +369,7 @@ def test_fit_metrics_are_populated_after_fitting(powerlaw_reference_data):
     metrics = [
         fit.aic,
         fit.bic,
-        fit.redchi,
+        fit.reduced_chi,
         fit.r2,
         fit.mean_absolute_error,
         fit.mean_percentage_error,
@@ -378,6 +378,29 @@ def test_fit_metrics_are_populated_after_fitting(powerlaw_reference_data):
     assert all(isinstance(metric, float) for metric in metrics)
     assert all(np.isfinite(metric) for metric in metrics)
     assert fit.r2 == pytest.approx(fit.result_.rsquared)
+
+
+def test_fit_calculates_error_metrics_from_known_data():
+    data = pd.DataFrame(
+        {
+            "stage": [12.0, 18.0, 44.0],
+            "discharge": [10.0, 20.0, 40.0],
+        }
+    )
+    model = models.PowerLaw()
+    model.parameters["a"].value = 1.0
+    model.parameters["a"].vary = False
+    model.parameters["h_zero"].value = 0.0
+    model.parameters["h_zero"].vary = False
+    model.parameters["b"].value = 1.0
+    model.parameters["b"].vary = False
+    rc = RatingCurve(data=data, h="stage", q="discharge")
+
+    fit = rc.fit("known", model=model)
+
+    assert fit.mean_absolute_error == pytest.approx(8.0 / 3.0)
+    assert fit.mean_percentage_error == pytest.approx(20.0 / 3.0)
+    assert fit.mean_absolute_percentage_error == pytest.approx(40.0 / 3.0)
 
 
 def test_fit_params_exposes_fitted_parameter_values(powerlaw_reference_data):

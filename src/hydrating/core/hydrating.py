@@ -33,6 +33,7 @@ class Fit:
     aic: float = field(init=False)
     bic: float = field(init=False)
     redchi: float = field(init=False)
+    reduced_chi: float = field(init=False)
     r2: float = field(init=False)
     mean_absolute_error: float = field(init=False)
     mean_percentage_error: float = field(init=False)
@@ -48,6 +49,7 @@ class Fit:
         self.aic = float(self.result_.aic)
         self.bic = float(self.result_.bic)
         self.redchi = float(self.result_.redchi)
+        self.reduced_chi = self.redchi
         self.r2 = float(self.result_.rsquared)
         self._calculate_metrics()
 
