@@ -3,8 +3,6 @@
 Tests for the RatingCurve API.
 """
 
-from collections import OrderedDict
-
 import numpy as np
 import pandas as pd
 import pytest
@@ -22,7 +20,7 @@ def test_rating_curve_initializes_with_data_columns():
     assert rc.enabled_col == "enabled"
     assert rc.metadata is None
     assert rc.data is not data
-    assert isinstance(rc.fits, OrderedDict)
+    assert isinstance(rc.fits, dict)
     assert list(rc.fits.items()) == []
 
 
@@ -496,6 +494,132 @@ def test_rating_curve_predict_rejects_unknown_fit_name(powerlaw_data):
 
     with pytest.raises(KeyError, match="Unknown fit name"):
         rc.predict([1.0, 2.0], fits="missing")
+
+
+def test_rating_curve_compare_fit_metrics_includes_metric_columns(
+    powerlaw_reference_data,
+):
+    data = pd.DataFrame(
+        {
+            "stage": powerlaw_reference_data["stage_exact"],
+            "discharge": powerlaw_reference_data["discharge_exact"],
+        }
+    )
+    fixed_b = models.PowerLaw()
+    fixed_b.parameters["b"].value = 2.6
+    fixed_b.parameters["b"].vary = False
+    rc = RatingCurve(data=data, h="stage", q="discharge")
+    rc.fit("base", model=models.PowerLaw())
+    rc.fit("fixed-b", model=fixed_b)
+
+    comparison = rc.compare_fit_metrics()
+
+    expected_columns = {
+        "reference_fit",
+        "is_reference",
+        "aic",
+        "bic",
+        "redchi",
+        "r2",
+        "mean_absolute_error",
+        "mean_percentage_error",
+        "mean_absolute_percentage_error",
+        "delta_aic",
+        "delta_bic",
+        "delta_redchi",
+        "delta_r2",
+        "delta_mean_absolute_error",
+        "delta_mean_percentage_error",
+        "delta_mean_absolute_percentage_error",
+    }
+    assert list(comparison.index) == ["base", "fixed-b"]
+    assert expected_columns <= set(comparison.columns)
+
+
+def test_rating_curve_compare_fit_metrics_defaults_to_first_fit_reference(
+    powerlaw_reference_data,
+):
+    data = pd.DataFrame(
+        {
+            "stage": powerlaw_reference_data["stage_exact"],
+            "discharge": powerlaw_reference_data["discharge_exact"],
+        }
+    )
+    fixed_b = models.PowerLaw()
+    fixed_b.parameters["b"].value = 2.6
+    fixed_b.parameters["b"].vary = False
+    rc = RatingCurve(data=data, h="stage", q="discharge")
+    rc.fit("base", model=models.PowerLaw())
+    rc.fit("fixed-b", model=fixed_b)
+
+    comparison = rc.compare_fit_metrics()
+
+    assert comparison.loc["base", "reference_fit"] == "base"
+    assert comparison.loc["base", "is_reference"]
+    assert comparison.loc["base", "delta_aic"] == pytest.approx(0.0)
+
+
+def test_rating_curve_compare_fit_metrics_defaults_to_first_selected_fit_reference(
+    powerlaw_reference_data,
+):
+    data = pd.DataFrame(
+        {
+            "stage": powerlaw_reference_data["stage_exact"],
+            "discharge": powerlaw_reference_data["discharge_exact"],
+        }
+    )
+    fixed_b = models.PowerLaw()
+    fixed_b.parameters["b"].value = 2.6
+    fixed_b.parameters["b"].vary = False
+    rc = RatingCurve(data=data, h="stage", q="discharge")
+    rc.fit("base", model=models.PowerLaw())
+    rc.fit("fixed-b", model=fixed_b)
+
+    comparison = rc.compare_fit_metrics(fits=["fixed-b", "base"])
+
+    assert comparison.loc["fixed-b", "reference_fit"] == "fixed-b"
+    assert comparison.loc["fixed-b", "is_reference"]
+    assert comparison.loc["fixed-b", "delta_aic"] == pytest.approx(0.0)
+
+
+def test_rating_curve_compare_fit_metrics_supports_explicit_reference(
+    powerlaw_reference_data,
+):
+    data = pd.DataFrame(
+        {
+            "stage": powerlaw_reference_data["stage_exact"],
+            "discharge": powerlaw_reference_data["discharge_exact"],
+        }
+    )
+    fixed_b = models.PowerLaw()
+    fixed_b.parameters["b"].value = 2.6
+    fixed_b.parameters["b"].vary = False
+    rc = RatingCurve(data=data, h="stage", q="discharge")
+    base = rc.fit("base", model=models.PowerLaw())
+    fixed = rc.fit("fixed-b", model=fixed_b)
+
+    comparison = rc.compare_fit_metrics(reference="fixed-b")
+
+    assert comparison.loc["fixed-b", "reference_fit"] == "fixed-b"
+    assert comparison.loc["fixed-b", "delta_aic"] == pytest.approx(0.0)
+    assert comparison.loc["base", "delta_aic"] == pytest.approx(base.aic - fixed.aic)
+
+
+def test_rating_curve_compare_fit_metrics_rejects_unknown_fit_name(powerlaw_data):
+    rc = RatingCurve(data=powerlaw_data, h="stage", q="discharge")
+    rc.fit("base", model=models.PowerLaw())
+
+    with pytest.raises(KeyError, match="Unknown fit name"):
+        rc.compare_fit_metrics(fits=["base", "missing"])
+
+
+def test_rating_curve_compare_fit_metrics_rejects_unknown_reference(powerlaw_data):
+    rc = RatingCurve(data=powerlaw_data, h="stage", q="discharge")
+    rc.fit("base", model=models.PowerLaw())
+
+    with pytest.raises(KeyError, match="Unknown reference fit"):
+        rc.compare_fit_metrics(reference="missing")
+
 
 def test_public_imports_work():
     assert RatingCurve is not None
