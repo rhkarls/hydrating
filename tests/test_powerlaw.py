@@ -1,143 +1,178 @@
 # -*- coding: utf-8 -*-
 """
-Tests for PowerLaw rating model
+Tests for PowerLaw rating model.
 """
 
+import numpy as np
 import pandas as pd
 import pytest
-from lmfit import Parameters
-from numpy.random import SeedSequence, default_rng
+from lmfit import Model, Parameters
 
 from hydrating import RatingCurve
 from hydrating.models import PowerLaw
 
-rng = default_rng(SeedSequence(12))
+TRUE_POWERLAW_PARAMS = {"a": 0.1, "h_zero": 0.65, "b": 2.5}
+STAGE_EXACT = np.linspace(1.0, 10.0, 20)
+DISCHARGE_EXACT = PowerLaw().func(STAGE_EXACT, **TRUE_POWERLAW_PARAMS)
 
-# Test data for power law rating
-a = 0.1
-b = 2.5
-h0 = 0.65
-
-stage_c = rng.uniform(1, 10, size=20)
-discharge_c = PowerLaw().func(stage_c, a, h0, b)
-
-stage_n = stage_c + rng.normal(0, 0.01, size=20)  # add some noise
-discharge_n = discharge_c + discharge_c * rng.normal(0, 0.1, size=20)  # add some noise
-
-df_c = pd.DataFrame({"stage_key": stage_c, "discharge_key": discharge_c})
-df_n = pd.DataFrame({"stage_key": stage_n, "discharge_key": discharge_n})
-
-partial_par_dict = {"b": 2}
-full_par_dict = {"a": 1, "b": 2, "h0": 0}
-
-lmfit_partial_par = Parameters()
-lmfit_partial_par.add("b", value=2)
-
-lmfit_full_par = Parameters()
-lmfit_full_par.add("a", value=1)
-lmfit_full_par.add("b", value=2)
-lmfit_full_par.add("h0", value=0)
-
-
-# passing no pars
-# passing lmfit Parameters
-# passing dict parameters
-@pytest.mark.parametrize(
-    "parameters, stage_data, discharge_data, test_par_vals",
-    [
-        (None, stage_c, discharge_c, True),  #
-        (None, stage_n, discharge_n, False),
-        (lmfit_partial_par, stage_c, discharge_c, True),
-        (lmfit_partial_par, stage_n, discharge_n, False),
-        (lmfit_full_par, stage_c, discharge_c, True),
-        (lmfit_full_par, stage_n, discharge_n, False),
-        (partial_par_dict, stage_c, discharge_c, True),
-        (partial_par_dict, stage_n, discharge_n, False),
-        (full_par_dict, stage_c, discharge_c, True),
-        (full_par_dict, stage_n, discharge_n, False),
-    ],
+rng = np.random.default_rng(12)
+STAGE_NOISY = STAGE_EXACT + rng.normal(0, 0.01, size=STAGE_EXACT.size)
+DISCHARGE_NOISY = DISCHARGE_EXACT + DISCHARGE_EXACT * rng.normal(
+    0, 0.1, size=DISCHARGE_EXACT.size
 )
-def test_powerlaw_fit(parameters, stage_data, discharge_data, test_par_vals):
-    rc_c = RatingCurve(PowerLaw, initial_parameters=parameters)
-    rc_c.fit(stage_data, discharge_data)
-
-    assert rc_c.fit_result.success
-    if test_par_vals:
-        assert pytest.approx(rc_c.fit_result.best_values) == {"a": a, "b": b, "h0": h0}
 
 
-# Test passing a dataframe with data, and passing None or str to fit call
-@pytest.mark.parametrize(
-    "parameters, stage_data, discharge_data, test_par_vals, data_df",
-    [
-        (None, "stage_key", "discharge_key", True, df_c),  #
-        (None, "stage_key", "discharge_key", False, df_n),
-        (lmfit_partial_par, "stage_key", "discharge_key", True, df_c),
-        (lmfit_partial_par, "stage_key", "discharge_key", False, df_n),
-        (lmfit_full_par, "stage_key", "discharge_key", True, df_c),
-        (lmfit_full_par, "stage_key", "discharge_key", False, df_n),
-        (partial_par_dict, "stage_key", "discharge_key", True, df_c),
-        (partial_par_dict, "stage_key", "discharge_key", False, df_n),
-        (full_par_dict, "stage_key", "discharge_key", True, df_c),
-        (full_par_dict, "stage_key", "discharge_key", False, df_n),
-    ],
-)
-def test_powerlaw_fit_df(
-    parameters, stage_data, discharge_data, test_par_vals, data_df
-):
-    rc_c = RatingCurve(PowerLaw, initial_parameters=parameters)
-    rc_c.add_data(data_df, stage=stage_data, discharge=discharge_data)
-    rc_c.fit(stage_data, discharge_data)
+def test_powerlaw_initializes_one_segment_with_lmfit_parameters():
+    model = PowerLaw()
 
-    assert rc_c.fit_result.success
-    if test_par_vals:
-        assert pytest.approx(rc_c.fit_result.best_values) == {"a": a, "b": b, "h0": h0}
+    assert model.segments == 1
+    assert isinstance(model.parameters, Parameters)
+    assert list(model.parameters.keys()) == ["a", "h_zero", "b"]
+    assert model.parameters["a"].value == 1.0
+    assert model.parameters["h_zero"].value == 0.0
+    assert model.parameters["b"].value == 2.0
+    assert model.parameter_distributions == {}
 
 
-# test fixing parameter (by changing .initial_parameters)
-# test bounds on parameters  (by changing .initial_parameters)
-# same by providing directly parameters that are fixed/bounded
-# Test fixing a lmfit parameter
-@pytest.mark.parametrize(
-    "parameters_raw, stage_data, discharge_data, test_par_vals",
-    [
-        (lmfit_partial_par, stage_c, discharge_c, True),
-        (lmfit_partial_par, stage_n, discharge_n, False),
-        (lmfit_full_par, stage_c, discharge_c, True),
-        (lmfit_full_par, stage_n, discharge_n, False),
-    ],
-)
-def test_powerlaw_fixed_input_par(
-    parameters_raw, stage_data, discharge_data, test_par_vals
-):
-    parameters = parameters_raw.copy()
-    parameters["b"].value = 2.6
-    parameters["b"].vary = False
+def test_powerlaw_func_uses_native_parameter_edits():
+    model = PowerLaw()
+    model.parameters["a"].value = 0.1
+    model.parameters["h_zero"].value = 0.65
+    model.parameters["b"].value = 2.5
+    stage = np.array([1.0, 2.0, 3.0])
 
-    rc_c = RatingCurve(PowerLaw, initial_parameters=parameters)
-    rc_c.fit(stage_data, discharge_data)
+    discharge = model.func(stage)
 
-    assert rc_c.fit_result.success
-    if test_par_vals:
-        assert pytest.approx(rc_c.fit_result.best_values) == {
-            "a": 0.07546474311331504,
-            "b": 2.6,
-            "h0": 0.4257742480337223,
+    np.testing.assert_allclose(discharge, 0.1 * (stage - 0.65) ** 2.5)
+
+
+def test_powerlaw_func_accepts_parameter_overrides():
+    model = PowerLaw()
+    stage = np.array([1.0, 2.0, 3.0])
+
+    discharge = model.func(stage, a=0.2, h_zero=0.5, b=2.0)
+
+    np.testing.assert_allclose(discharge, 0.2 * (stage - 0.5) ** 2.0)
+
+
+def test_powerlaw_create_lmfit_model_uses_current_parameter_hints():
+    model = PowerLaw()
+    model.parameters["b"].value = 2.5
+    model.parameters["b"].vary = False
+    model.parameters["b"].min = 1.0
+
+    lmfit_model = model.create_lmfit_model()
+    parameters = lmfit_model.make_params()
+
+    assert isinstance(lmfit_model, Model)
+    assert lmfit_model.param_names == ["a", "h_zero", "b"]
+    assert parameters["b"].value == 2.5
+    assert parameters["b"].vary is False
+    assert parameters["b"].min == 1.0
+
+
+def test_powerlaw_lmfit_model_fits_exact_data():
+    model = PowerLaw()
+    model.constrain_parameters(STAGE_EXACT, DISCHARGE_EXACT)
+
+    result = model.create_lmfit_model().fit(
+        DISCHARGE_EXACT,
+        params=model.parameters.copy(),
+        h=STAGE_EXACT,
+    )
+
+    assert result.success
+    assert result.best_values == pytest.approx(TRUE_POWERLAW_PARAMS)
+
+
+def test_powerlaw_constrain_parameters_limits_zero_flow_stage():
+    model = PowerLaw()
+
+    returned = model.constrain_parameters(
+        h=np.array([1.2, 1.5, 2.0]), q=np.array([10.0, 20.0, 40.0])
+    )
+
+    assert returned is model.parameters
+    assert model.parameters["h_zero"].max == pytest.approx(1.2 - 1e-10)
+
+
+def test_powerlaw_constrain_parameters_preserves_lower_existing_maximum():
+    model = PowerLaw()
+    model.parameters["h_zero"].max = 0.8
+
+    model.constrain_parameters(
+        h=np.array([1.2, 1.5, 2.0]), q=np.array([10.0, 20.0, 40.0])
+    )
+
+    assert model.parameters["h_zero"].max == 0.8
+
+
+def test_powerlaw_inverse_matches_forward_function():
+    model = PowerLaw()
+    stage = np.array([1.0, 2.0, 3.0])
+    params = {"a": 0.1, "h_zero": 0.65, "b": 2.5}
+    discharge = model.func(stage, **params)
+
+    inverse_stage = model.inverse(discharge, **params)
+
+    np.testing.assert_allclose(inverse_stage, stage)
+
+
+def test_rating_curve_fit_powerlaw_exact_data_recovers_parameters():
+    data = pd.DataFrame(
+        {
+            "stage": STAGE_EXACT,
+            "discharge": DISCHARGE_EXACT,
         }
-    else:
-        assert pytest.approx(rc_c.fit_result.best_values["b"]) == 2.6
+    )
+    rc = RatingCurve(data=data, h="stage", q="discharge")
+
+    fit = rc.fit("exact", model=PowerLaw())
+
+    assert fit.result_.success
+    assert rc.fits["exact"] is fit
+    assert fit.result_.best_values == pytest.approx(TRUE_POWERLAW_PARAMS)
 
 
-# def test_powerlaw_bounded_input_par # TODO
-# def test_powerlaw_fixed_init_par # TODO
-# def test_powerlaw_bounded_init_par # TODO
+def test_rating_curve_fit_powerlaw_noisy_data_succeeds():
+    data = pd.DataFrame(
+        {
+            "stage": STAGE_NOISY,
+            "discharge": DISCHARGE_NOISY,
+        }
+    )
+    rc = RatingCurve(data=data, h="stage", q="discharge")
+
+    fit = rc.fit("noisy", model=PowerLaw())
+
+    assert fit.result_.success
+    assert set(fit.result_.best_values) == {"a", "h_zero", "b"}
 
 
-# passing kwargs to lmfit.Model.fit
-def test_lmfit_kwargs(): ...
+def test_rating_curve_fit_respects_fixed_powerlaw_parameter():
+    data = pd.DataFrame(
+        {
+            "stage": STAGE_EXACT,
+            "discharge": DISCHARGE_EXACT,
+        }
+    )
+    model = PowerLaw()
+    model.parameters["b"].value = 2.6
+    model.parameters["b"].vary = False
+    rc = RatingCurve(data=data, h="stage", q="discharge")
+
+    fit = rc.fit("fixed-b", model=model)
+
+    assert fit.result_.success
+    assert fit.result_.best_values["b"] == pytest.approx(2.6)
 
 
-# test setting the stage series and predicting with timeseries to get a Q timeseries
-def test_setting_stage_series_and_predict_q(): ...
+@pytest.mark.parametrize("segments", [0, -1, 1.5, "1", True])
+def test_powerlaw_rejects_invalid_segments(segments):
+    with pytest.raises(ValueError, match="segments must be an integer >= 1"):
+        PowerLaw(segments=segments)
 
-# test inverse method with and without h0
+
+def test_powerlaw_reports_unimplemented_segmented_model():
+    with pytest.raises(NotImplementedError, match="segments > 1"):
+        PowerLaw(segments=2)
