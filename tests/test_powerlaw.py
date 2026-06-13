@@ -4,22 +4,10 @@ Tests for PowerLaw rating model.
 """
 
 import numpy as np
-import pandas as pd
 import pytest
 from lmfit import Model, Parameters
 
-from hydrating import RatingCurve
 from hydrating.models import PowerLaw
-
-TRUE_POWERLAW_PARAMS = {"a": 0.1, "h_zero": 0.65, "b": 2.5}
-STAGE_EXACT = np.linspace(1.0, 10.0, 20)
-DISCHARGE_EXACT = PowerLaw().func(STAGE_EXACT, **TRUE_POWERLAW_PARAMS)
-
-rng = np.random.default_rng(12)
-STAGE_NOISY = STAGE_EXACT + rng.normal(0, 0.01, size=STAGE_EXACT.size)
-DISCHARGE_NOISY = DISCHARGE_EXACT + DISCHARGE_EXACT * rng.normal(
-    0, 0.1, size=DISCHARGE_EXACT.size
-)
 
 
 def test_powerlaw_initializes_one_segment_with_lmfit_parameters():
@@ -71,18 +59,21 @@ def test_powerlaw_create_lmfit_model_uses_current_parameter_hints():
     assert parameters["b"].min == 1.0
 
 
-def test_powerlaw_lmfit_model_fits_exact_data():
+def test_powerlaw_lmfit_model_fits_exact_data(powerlaw_reference_data):
     model = PowerLaw()
-    model.constrain_parameters(STAGE_EXACT, DISCHARGE_EXACT)
+    model.constrain_parameters(
+        powerlaw_reference_data["stage_exact"],
+        powerlaw_reference_data["discharge_exact"],
+    )
 
     result = model.create_lmfit_model().fit(
-        DISCHARGE_EXACT,
+        powerlaw_reference_data["discharge_exact"],
         params=model.parameters.copy(),
-        h=STAGE_EXACT,
+        h=powerlaw_reference_data["stage_exact"],
     )
 
     assert result.success
-    assert result.best_values == pytest.approx(TRUE_POWERLAW_PARAMS)
+    assert result.best_values == pytest.approx(powerlaw_reference_data["true_params"])
 
 
 def test_powerlaw_constrain_parameters_limits_zero_flow_stage():
@@ -116,55 +107,6 @@ def test_powerlaw_inverse_matches_forward_function():
     inverse_stage = model.inverse(discharge, **params)
 
     np.testing.assert_allclose(inverse_stage, stage)
-
-
-def test_rating_curve_fit_powerlaw_exact_data_recovers_parameters():
-    data = pd.DataFrame(
-        {
-            "stage": STAGE_EXACT,
-            "discharge": DISCHARGE_EXACT,
-        }
-    )
-    rc = RatingCurve(data=data, h="stage", q="discharge")
-
-    fit = rc.fit("exact", model=PowerLaw())
-
-    assert fit.result_.success
-    assert rc.fits["exact"] is fit
-    assert fit.result_.best_values == pytest.approx(TRUE_POWERLAW_PARAMS)
-
-
-def test_rating_curve_fit_powerlaw_noisy_data_succeeds():
-    data = pd.DataFrame(
-        {
-            "stage": STAGE_NOISY,
-            "discharge": DISCHARGE_NOISY,
-        }
-    )
-    rc = RatingCurve(data=data, h="stage", q="discharge")
-
-    fit = rc.fit("noisy", model=PowerLaw())
-
-    assert fit.result_.success
-    assert set(fit.result_.best_values) == {"a", "h_zero", "b"}
-
-
-def test_rating_curve_fit_respects_fixed_powerlaw_parameter():
-    data = pd.DataFrame(
-        {
-            "stage": STAGE_EXACT,
-            "discharge": DISCHARGE_EXACT,
-        }
-    )
-    model = PowerLaw()
-    model.parameters["b"].value = 2.6
-    model.parameters["b"].vary = False
-    rc = RatingCurve(data=data, h="stage", q="discharge")
-
-    fit = rc.fit("fixed-b", model=model)
-
-    assert fit.result_.success
-    assert fit.result_.best_values["b"] == pytest.approx(2.6)
 
 
 @pytest.mark.parametrize("segments", [0, -1, 1.5, "1", True])

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Tests for the RatingCurve API skeleton.
+Tests for the RatingCurve API.
 """
 
 from collections import OrderedDict
@@ -248,6 +248,59 @@ def test_fit_stores_named_fit(powerlaw_data):
     assert fit.backend == "lmfit"
     assert fit.result_.success
     assert rc.fits["base"] is fit
+
+
+def test_rating_curve_fit_powerlaw_exact_data_recovers_parameters(
+    powerlaw_reference_data,
+):
+    data = pd.DataFrame(
+        {
+            "stage": powerlaw_reference_data["stage_exact"],
+            "discharge": powerlaw_reference_data["discharge_exact"],
+        }
+    )
+    rc = RatingCurve(data=data, h="stage", q="discharge")
+
+    fit = rc.fit("exact", model=models.PowerLaw())
+
+    assert fit.result_.success
+    assert rc.fits["exact"] is fit
+    assert fit.result_.best_values == pytest.approx(
+        powerlaw_reference_data["true_params"]
+    )
+
+
+def test_rating_curve_fit_powerlaw_noisy_data_succeeds(powerlaw_reference_data):
+    data = pd.DataFrame(
+        {
+            "stage": powerlaw_reference_data["stage_noisy"],
+            "discharge": powerlaw_reference_data["discharge_noisy"],
+        }
+    )
+    rc = RatingCurve(data=data, h="stage", q="discharge")
+
+    fit = rc.fit("noisy", model=models.PowerLaw())
+
+    assert fit.result_.success
+    assert set(fit.result_.best_values) == {"a", "h_zero", "b"}
+
+
+def test_rating_curve_fit_respects_fixed_powerlaw_parameter(powerlaw_reference_data):
+    data = pd.DataFrame(
+        {
+            "stage": powerlaw_reference_data["stage_exact"],
+            "discharge": powerlaw_reference_data["discharge_exact"],
+        }
+    )
+    model = models.PowerLaw()
+    model.parameters["b"].value = 2.6
+    model.parameters["b"].vary = False
+    rc = RatingCurve(data=data, h="stage", q="discharge")
+
+    fit = rc.fit("fixed-b", model=model)
+
+    assert fit.result_.success
+    assert fit.result_.best_values["b"] == pytest.approx(2.6)
 
 
 def test_fit_rejects_duplicate_name_without_overwrite(powerlaw_data):
