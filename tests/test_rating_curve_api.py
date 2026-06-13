@@ -5,6 +5,7 @@ Tests for the RatingCurve API.
 
 from collections import OrderedDict
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -331,6 +332,79 @@ def test_fit_snapshots_enabled_rows(powerlaw_data):
 
     assert fit.active_data_["stage"].tolist() == [1.0, 2.0, 5.0]
     assert rc.active_data["stage"].tolist() == [1.0, 2.0, 3.0, 4.0, 5.0]
+
+
+def test_fit_predict_returns_expected_shape_and_values(powerlaw_reference_data):
+    data = pd.DataFrame(
+        {
+            "stage": powerlaw_reference_data["stage_exact"],
+            "discharge": powerlaw_reference_data["discharge_exact"],
+        }
+    )
+    rc = RatingCurve(data=data, h="stage", q="discharge")
+    fit = rc.fit("exact", model=models.PowerLaw())
+    stage = np.array([1.5, 3.0, 7.5])
+
+    predicted = fit.predict(stage)
+
+    assert predicted.shape == stage.shape
+    np.testing.assert_allclose(
+        predicted,
+        models.PowerLaw().func(stage, **powerlaw_reference_data["true_params"]),
+        rtol=1e-5,
+    )
+
+
+def test_fit_metrics_are_populated_after_fitting(powerlaw_reference_data):
+    data = pd.DataFrame(
+        {
+            "stage": powerlaw_reference_data["stage_noisy"],
+            "discharge": powerlaw_reference_data["discharge_noisy"],
+        }
+    )
+    rc = RatingCurve(data=data, h="stage", q="discharge")
+
+    fit = rc.fit("noisy", model=models.PowerLaw())
+
+    metrics = [
+        fit.aic,
+        fit.bic,
+        fit.redchi,
+        fit.r2,
+        fit.mean_absolute_error,
+        fit.mean_percentage_error,
+        fit.mean_absolute_percentage_error,
+    ]
+    assert all(isinstance(metric, float) for metric in metrics)
+    assert all(np.isfinite(metric) for metric in metrics)
+    assert fit.r2 == pytest.approx(fit.result_.rsquared)
+
+
+def test_fit_params_exposes_fitted_parameter_values(powerlaw_reference_data):
+    data = pd.DataFrame(
+        {
+            "stage": powerlaw_reference_data["stage_exact"],
+            "discharge": powerlaw_reference_data["discharge_exact"],
+        }
+    )
+    rc = RatingCurve(data=data, h="stage", q="discharge")
+
+    fit = rc.fit("exact", model=models.PowerLaw())
+
+    assert fit.params_ == pytest.approx(powerlaw_reference_data["true_params"])
+    assert fit.derived_params_ == {}
+
+
+def test_fit_active_data_snapshot_is_independent_after_later_filtering(powerlaw_data):
+    rc = RatingCurve(data=powerlaw_data, h="stage", q="discharge")
+
+    fit = rc.enable([True, True, False, False, True]).fit(
+        "selected", model=models.PowerLaw()
+    )
+    rc.enable_where(stage=3.0)
+
+    assert fit.active_data_["stage"].tolist() == [1.0, 2.0, 5.0]
+    assert rc.active_data["stage"].tolist() == [3.0]
 
 
 def test_public_imports_work():
