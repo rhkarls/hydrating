@@ -5,7 +5,6 @@ Core rating-curve objects.
 
 from __future__ import annotations
 
-from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Callable, Hashable, TypeAlias, cast
 
@@ -15,6 +14,17 @@ import pandas as pd
 BooleanMask: TypeAlias = np.ndarray | pd.Series | list[bool]
 WherePredicate: TypeAlias = Callable[[pd.Series], BooleanMask]
 WhereCondition: TypeAlias = Hashable | WherePredicate
+FitSelection: TypeAlias = str | list[str] | tuple[str, ...] | None
+
+COMPARISON_METRICS = (
+    "aic",
+    "bic",
+    "redchi",
+    "r2",
+    "mean_absolute_error",
+    "mean_percentage_error",
+    "mean_absolute_percentage_error",
+)
 
 
 @dataclass
@@ -149,7 +159,7 @@ class RatingCurve:
         self.q_col = q
         self.enabled_col = enabled
         self.metadata = metadata
-        self.fits = OrderedDict()  # TODO maybe we can just use regular
+        self.fits = {}
 
         self._validate_required_columns()
         if self.enabled_col not in self.data.columns:
@@ -188,8 +198,8 @@ class RatingCurve:
             Discharge gauging uncertainty. Currently not implemented.
         backend : {"lmfit"}, default "lmfit"
             Fitting backend.
-        overwrite : bool, default False
-            Whether an existing fit with the same name may be replaced.
+        overwrite : bool
+            Whether an existing fit with the same name may be replaced. The default is None.
         **lmfit_options
             Additional keyword arguments passed to ``lmfit.Model.fit``.
 
@@ -255,6 +265,51 @@ class RatingCurve:
             {name: fit.predict(stage_values) for name, fit in selected_fits.items()},
             index=index,
         )
+
+    def compare_fit_metrics(
+        self, fits: FitSelection = None, *, reference: str | None = None
+    ) -> pd.DataFrame:
+        """
+        Compare fit metrics against a reference fit.
+
+        Parameters
+        ----------
+        fits : str, list of str, or None
+            Fit name or names to compare. If None, all registered fits are
+            compared. The default is None.
+        reference : str, optional
+            Fit used as the comparison reference. If omitted, the first created
+            fit is used.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Fit metrics and metric deltas relative to the reference fit.
+        """
+        selected_fits = self._resolve_fits(fits)
+        reference_name, reference_fit = self._resolve_reference_fit(
+            selected_fits, reference
+        )
+        reference_metrics = self._fit_metric_values(reference_fit)
+
+        rows = []
+        for name, fit in selected_fits.items():
+            metrics = self._fit_metric_values(fit)
+            row = {
+                "fit": name,
+                "reference_fit": reference_name,
+                "is_reference": name == reference_name,
+                **metrics,
+            }
+            row.update(
+                {
+                    f"delta_{metric}": metrics[metric] - reference_metrics[metric]
+                    for metric in COMPARISON_METRICS
+                }
+            )
+            rows.append(row)
+
+        return pd.DataFrame(rows).set_index("fit")
 
     def enable(self, mask: BooleanMask) -> RatingCurve:
         """
@@ -426,6 +481,23 @@ class RatingCurve:
             raise KeyError(f"Unknown fit name(s): {missing}")
 
         return {name: self.fits[name] for name in names}
+
+    def _resolve_reference_fit(
+        self,
+        selected_fits: dict[str, Fit],
+        reference_name: str | None,
+    ) -> tuple[str, Fit]:
+        if reference_name is None:
+            reference_name = next(iter(selected_fits))
+
+        if reference_name not in self.fits:
+            raise KeyError(f"Unknown reference fit: {reference_name!r}.")
+
+        return reference_name, self.fits[reference_name]
+
+    @staticmethod
+    def _fit_metric_values(fit: Fit) -> dict[str, float]:
+        return {metric: float(getattr(fit, metric)) for metric in COMPARISON_METRICS}
 
     @staticmethod
     def _coerce_stage_values(stage) -> np.ndarray:
