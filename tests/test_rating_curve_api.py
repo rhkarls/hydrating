@@ -430,6 +430,73 @@ def test_fit_active_data_snapshot_is_independent_after_later_filtering(powerlaw_
     assert rc.active_data["stage"].tolist() == [3.0]
 
 
+def test_rating_curve_predict_works_with_one_fit(powerlaw_reference_data):
+    data = pd.DataFrame(
+        {
+            "stage": powerlaw_reference_data["stage_exact"],
+            "discharge": powerlaw_reference_data["discharge_exact"],
+        }
+    )
+    stage = pd.Series(
+        [1.5, 3.0],
+        index=pd.to_datetime(["2026-01-01 00:00", "2026-01-01 01:00"]),
+    )
+    rc = RatingCurve(data=data, h="stage", q="discharge")
+    fit = rc.fit("base", model=models.PowerLaw())
+
+    predicted = rc.predict(stage)
+
+    assert list(predicted.columns) == ["base"]
+    assert predicted.index.equals(stage.index)
+    np.testing.assert_allclose(predicted["base"].to_numpy(), fit.predict(stage))
+
+
+def test_rating_curve_predict_works_with_multiple_fits(powerlaw_reference_data):
+    data = pd.DataFrame(
+        {
+            "stage": powerlaw_reference_data["stage_exact"],
+            "discharge": powerlaw_reference_data["discharge_exact"],
+        }
+    )
+    fixed_b = models.PowerLaw()
+    fixed_b.parameters["b"].value = 2.6
+    fixed_b.parameters["b"].vary = False
+    rc = RatingCurve(data=data, h="stage", q="discharge")
+    rc.fit("base", model=models.PowerLaw())
+    rc.fit("fixed-b", model=fixed_b)
+
+    predicted = rc.predict([1.5, 3.0])
+
+    assert list(predicted.columns) == ["base", "fixed-b"]
+    assert predicted.shape == (2, 2)
+
+
+def test_rating_curve_predict_supports_selected_fits(powerlaw_reference_data):
+    data = pd.DataFrame(
+        {
+            "stage": powerlaw_reference_data["stage_exact"],
+            "discharge": powerlaw_reference_data["discharge_exact"],
+        }
+    )
+    fixed_b = models.PowerLaw()
+    fixed_b.parameters["b"].value = 2.6
+    fixed_b.parameters["b"].vary = False
+    rc = RatingCurve(data=data, h="stage", q="discharge")
+    rc.fit("base", model=models.PowerLaw())
+    rc.fit("fixed-b", model=fixed_b)
+
+    predicted = rc.predict([1.5, 3.0], fits=["fixed-b", "base"])
+
+    assert list(predicted.columns) == ["fixed-b", "base"]
+
+
+def test_rating_curve_predict_rejects_unknown_fit_name(powerlaw_data):
+    rc = RatingCurve(data=powerlaw_data, h="stage", q="discharge")
+    rc.fit("base", model=models.PowerLaw())
+
+    with pytest.raises(KeyError, match="Unknown fit name"):
+        rc.predict([1.0, 2.0], fits="missing")
+
 def test_public_imports_work():
     assert RatingCurve is not None
     assert models.PowerLaw is not None
