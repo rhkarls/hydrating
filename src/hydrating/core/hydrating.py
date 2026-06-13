@@ -225,6 +225,37 @@ class RatingCurve:
 
         return fit
 
+    def predict(self, stage, *, fits: FitSelection = None) -> pd.DataFrame:
+        """
+        Predict discharge from one or more named rating curve fits.
+
+        Parameters
+        ----------
+        stage : scalar or array-like
+            Stage values.
+        fits : str, list of str, or None
+            Fit name or names to predict from. If None, all registered fits
+            are used. The default is None.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Predicted discharge values with one column per fit, column name is fit name.
+        """
+        selected_fits = self._resolve_fits(fits)
+        stage_values = self._coerce_stage_values(stage)
+        if isinstance(stage, pd.Series):
+            index = stage.index
+        elif isinstance(stage, pd.Index):
+            index = stage
+        else:
+            index = None
+
+        return pd.DataFrame(
+            {name: fit.predict(stage_values) for name, fit in selected_fits.items()},
+            index=index,
+        )
+
     def enable(self, mask: BooleanMask) -> RatingCurve:
         """
         Replace the enabled row mask.
@@ -378,3 +409,29 @@ class RatingCurve:
         if not pd.api.types.is_bool_dtype(mask_series):
             raise ValueError(f"{name} must contain boolean values.")
         return pd.Series(mask_series.to_numpy(dtype=bool), index=self.data.index)
+
+    def _resolve_fits(self, fits: FitSelection) -> dict[str, Fit]:
+        if fits is None:
+            names = list(self.fits)
+        elif isinstance(fits, str):
+            names = [fits]
+        else:
+            names = list(fits)
+
+        if not names:
+            raise ValueError("At least one fit must be selected.")
+
+        missing = [name for name in names if name not in self.fits]
+        if missing:
+            raise KeyError(f"Unknown fit name(s): {missing}")
+
+        return {name: self.fits[name] for name in names}
+
+    @staticmethod
+    def _coerce_stage_values(stage) -> np.ndarray:
+        stage_values = np.asarray(stage, dtype=float)
+        if stage_values.ndim == 0:
+            return stage_values.reshape(1)
+        if stage_values.ndim != 1:
+            raise ValueError("stage must be a scalar or one-dimensional array-like.")
+        return stage_values
