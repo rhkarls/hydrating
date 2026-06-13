@@ -29,12 +29,14 @@ class Fit:
     h_col: str
     q_col: str
     params_: dict[str, float] = field(init=False)
+    derived_params_: dict[str, float] = field(init=False)
 
     def __post_init__(self):
         self.active_data_ = self.active_data_.copy(deep=True)
         self.params_ = {
             name: float(parameter.value) for name, parameter in self.result_.params.items()
         }
+        self.derived_params_ = self._derived_parameters()
 
     def predict(self, h):
         """
@@ -52,6 +54,13 @@ class Fit:
         """
         h_values = np.asarray(h, dtype=float)
         return np.asarray(self.model.func(h_values, **self.params_), dtype=float)
+
+
+    def _derived_parameters(self) -> dict[str, float]:
+        if not hasattr(self.model, "derived_parameters"):
+            return {}
+        derived = self.model.derived_parameters(self.params_)
+        return {name: float(value) for name, value in derived.items()}
 
 
 # TODO move out of this file
