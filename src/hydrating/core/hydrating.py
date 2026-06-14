@@ -235,6 +235,12 @@ class RatingCurve:
 
         return fit
 
+    def add_data(self, *args, **kwargs):
+        raise RuntimeError(
+            "RatingCurve.add_data() was removed in hydrating 0.1.0. "
+            "Pass data to RatingCurve(data=..., h=..., q=...) instead."
+        )
+
     def predict(self, stage, *, fits: FitSelection = None) -> pd.DataFrame:
         """
         Predict discharge from one or more named rating curve fits.

@@ -231,6 +231,18 @@ def test_fit_requires_model_argument(powerlaw_data):
         rc.fit("missing-model")
 
 
+def test_add_data_raises_removed_api_message(powerlaw_data):
+    rc = RatingCurve(data=powerlaw_data, h="stage", q="discharge")
+
+    with pytest.raises(RuntimeError) as exc_info:
+        rc.add_data(powerlaw_data, stage="stage", discharge="discharge")
+
+    assert str(exc_info.value) == (
+        "RatingCurve.add_data() was removed in hydrating 0.1.0. "
+        "Pass data to RatingCurve(data=..., h=..., q=...) instead."
+    )
+
+
 def test_fit_rejects_unsupported_backend(powerlaw_data):
     rc = RatingCurve(data=powerlaw_data, h="stage", q="discharge")
 
