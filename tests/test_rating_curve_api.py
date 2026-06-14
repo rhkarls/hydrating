@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from hydrating import RatingCurve, models
+from hydrating.core import LmfitBackend
 
 
 def test_rating_curve_initializes_with_data_columns():
@@ -312,6 +313,87 @@ def test_rating_curve_fit_respects_fixed_powerlaw_parameter(powerlaw_reference_d
 
     assert fit.result_.success
     assert fit.result_.best_values["b"] == pytest.approx(2.6)
+
+
+def test_rating_curve_fit_accepts_scalar_uncertainty(powerlaw_reference_data):
+    data = pd.DataFrame(
+        {
+            "stage": powerlaw_reference_data["stage_exact"],
+            "discharge": powerlaw_reference_data["discharge_exact"],
+        }
+    )
+    rc = RatingCurve(data=data, h="stage", q="discharge")
+
+    fit = rc.fit("scalar-uncertainty", model=models.PowerLaw(), uncertainty=5.0)
+
+    assert fit.result_.success
+
+
+def test_rating_curve_fit_accepts_array_uncertainty(powerlaw_reference_data):
+    data = pd.DataFrame(
+        {
+            "stage": powerlaw_reference_data["stage_exact"],
+            "discharge": powerlaw_reference_data["discharge_exact"],
+        }
+    )
+    uncertainty = np.full(len(data), 5.0)
+    rc = RatingCurve(data=data, h="stage", q="discharge")
+
+    fit = rc.fit("array-uncertainty", model=models.PowerLaw(), uncertainty=uncertainty)
+
+    assert fit.result_.success
+
+
+def test_rating_curve_fit_accepts_uncertainty_column(powerlaw_reference_data):
+    data = pd.DataFrame(
+        {
+            "stage": powerlaw_reference_data["stage_exact"],
+            "discharge": powerlaw_reference_data["discharge_exact"],
+            "uncertainty": np.full_like(powerlaw_reference_data["stage_exact"], 5.0),
+        }
+    )
+    rc = RatingCurve(data=data, h="stage", q="discharge")
+
+    fit = rc.fit(
+        "column-uncertainty", model=models.PowerLaw(), uncertainty="uncertainty"
+    )
+
+    assert fit.result_.success
+
+
+@pytest.mark.parametrize(
+    "uncertainty",
+    [
+        0.0,
+        -1.0,
+        np.inf,
+        [5.0, np.nan, 5.0, 5.0, 5.0],
+    ],
+)
+def test_rating_curve_fit_rejects_invalid_uncertainty_values(
+    powerlaw_data, uncertainty
+):
+    rc = RatingCurve(data=powerlaw_data, h="stage", q="discharge")
+
+    with pytest.raises(ValueError, match="uncertainty"):
+        rc.fit("invalid-uncertainty", model=models.PowerLaw(), uncertainty=uncertainty)
+
+
+def test_rating_curve_fit_rejects_uncertainty_length_mismatch(powerlaw_data):
+    rc = RatingCurve(data=powerlaw_data, h="stage", q="discharge")
+
+    with pytest.raises(ValueError, match="uncertainty length"):
+        rc.fit("short-uncertainty", model=models.PowerLaw(), uncertainty=[5.0])
+
+
+def test_uncertainty_percent_converts_to_inverse_standard_uncertainty_weights():
+    weights = LmfitBackend._weights_from_percent_uncertainty(
+        q=np.array([100.0, 100.0]),
+        uncertainty=np.array([2.0, 10.0]),
+    )
+
+    np.testing.assert_allclose(weights, np.array([0.5, 0.1]))
+    assert weights[0] > weights[1]
 
 
 def test_fit_rejects_duplicate_name_without_overwrite(powerlaw_data):
