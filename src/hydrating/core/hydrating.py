@@ -113,17 +113,50 @@ class LmfitBackend:
 
     def fit(self, *, model, h, q, uncertainty=None, **options):
         """Fit a model using lmfit."""
-        if uncertainty is not None:
-            raise NotImplementedError(
-                "uncertainty not yet implementation, pass as None."
-            )
-
         h_values = np.asarray(h, dtype=float)
         q_values = np.asarray(q, dtype=float)
+        if uncertainty is not None:
+            if "weights" in options:
+                raise ValueError(
+                    "uncertainty cannot be combined with explicit lmfit weights."
+                )
+            options["weights"] = self._weights_from_percent_uncertainty(
+                q_values, uncertainty
+            )
+
         parameters = model.constrain_parameters(h_values, q_values).copy()
         lmfit_model = model.create_lmfit_model()
 
         return lmfit_model.fit(q_values, params=parameters, h=h_values, **options)
+
+    @staticmethod
+    def _weights_from_percent_uncertainty(q, uncertainty) -> np.ndarray:
+        q_values = np.asarray(q, dtype=float)
+        uncertainty_values = np.asarray(uncertainty, dtype=float)
+
+        if uncertainty_values.ndim == 0:
+            uncertainty_values = np.full(q_values.shape, float(uncertainty_values))
+        elif uncertainty_values.ndim != 1:
+            raise ValueError("uncertainty must be scalar or one-dimensional.")
+        elif len(uncertainty_values) != len(q_values):
+            raise ValueError(
+                "uncertainty length must match active data length "
+                f"({len(q_values)}), got {len(uncertainty_values)}."
+            )
+
+        if not np.all(np.isfinite(uncertainty_values)) or np.any(
+            uncertainty_values <= 0
+        ):
+            raise ValueError("uncertainty must contain positive finite percent values.")
+
+        sigma_q = q_values * uncertainty_values / 100.0
+        if not np.all(np.isfinite(sigma_q)) or np.any(sigma_q <= 0):
+            raise ValueError(
+                "uncertainty and discharge values must produce positive finite "
+                "standard uncertainties."
+            )
+
+        return np.ascontiguousarray(1.0 / sigma_q, dtype=np.float64)
 
 
 # TODO should the uncertainty column be set here? (can be None)
@@ -195,7 +228,9 @@ class RatingCurve:
         model
             Rating model with the hydrating model interface.
         uncertainty : optional
-            Discharge gauging uncertainty. Currently not implemented.
+            Percent relative discharge gauging uncertainty. Accepts a scalar,
+            an array-like value with one item per active row, or the name of a
+            data column containing percent uncertainties.
         backend : {"lmfit"}, default "lmfit"
             Fitting backend.
         overwrite : bool
@@ -214,12 +249,13 @@ class RatingCurve:
             raise ValueError(f"Fit {name!r} already exists.")
 
         active_data = self.active_data
+        uncertainty_values = self._resolve_uncertainty(uncertainty, active_data)
         backend_inst = LmfitBackend()
         result = backend_inst.fit(
             model=model,
             h=active_data[self.h_col].to_numpy(),
             q=active_data[self.q_col].to_numpy(),
-            uncertainty=uncertainty,
+            uncertainty=uncertainty_values,
             **lmfit_options,
         )
         fit = Fit(
@@ -500,6 +536,16 @@ class RatingCurve:
             raise KeyError(f"Unknown reference fit: {reference_name!r}.")
 
         return reference_name, self.fits[reference_name]
+
+    @staticmethod
+    def _resolve_uncertainty(uncertainty, active_data: pd.DataFrame):
+        if uncertainty is None:
+            return None
+        if isinstance(uncertainty, str):
+            if uncertainty not in active_data.columns:
+                raise KeyError(f"Unknown uncertainty column: {uncertainty!r}.")
+            return active_data[uncertainty].to_numpy()
+        return uncertainty
 
     @staticmethod
     def _fit_metric_values(fit: Fit) -> dict[str, float]:
