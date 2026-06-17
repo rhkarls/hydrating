@@ -110,21 +110,19 @@ class PowerLaw:
     def __init__(self, segments: int = 1):
         if type(segments) is not int or segments < 1:
             raise ValueError("segments must be an integer >= 1.")
-        if segments != 1:
-            raise NotImplementedError("PowerLaw segments > 1 are not implemented yet.")
 
         self.segments = segments
         self.parameters = self._default_parameters()
         self.parameter_distributions: dict[str, Any] = {}
 
-    def func(self, h: np.ndarray, **params: float) -> np.ndarray:
+    def func(self, h: float | np.ndarray, **params: float) -> np.ndarray:
         """
         The power law rating curve function.
 
         .. math::
-            Q(h) = a \\times (h-h_zero)^b
+            Q(h) = a \\times (h-h0)^b
 
-        where :math:`Q` is discharge, :math:`h` is stage, :math:`h_zero` is
+        where :math:`Q` is discharge, :math:`h` is stage, :math:`h0` is
         stage at zero flow, and :math:`a` and :math:`b` are fitted parameters.
 
         Parameters
@@ -141,7 +139,11 @@ class PowerLaw:
             Discharge for the provided stage.
         """
         values = self._parameter_values(params)
-        return self._power_law(h, a=values["a"], h_zero=values["h_zero"], b=values["b"])
+        if self.segments == 1:
+            return self._power_law(
+                h, a=values["a"], h0=values["h0"], b=values["b"]
+            )
+        return self._segmented_power_law(h, values)
 
     def create_lmfit_model(self) -> Model:
         """
@@ -152,7 +154,11 @@ class PowerLaw:
         Model
             The lmfit Model for the power law rating curve.
         """
-        lmfit_model = Model(self._func_for_lmfit)
+        lmfit_model = Model(
+            self._create_lmfit_function(),
+            independent_vars=["h"],
+            param_names=list(self.parameters.keys()),
+        )
 
         # copy the parameter settings to the model
         # to make internal parameter behaviour consistent with the lmfit Model.fit() method
@@ -173,7 +179,7 @@ class PowerLaw:
     def constrain_parameters(self, h: np.ndarray, q: np.ndarray) -> Parameters:
         """
         Constraining on the parameters based on observed values.
-        This function sets the maximum value of h_zero to the minimum value of h, i.e. stage.
+        This function sets the maximum value of h0 to the minimum value of h, i.e. stage.
         This is to avoid fitting a rating curve with zero flow stage that is higher than the observed stage with flow, which is not physically possible.
         Avoid using this constrain if the observed stage goes below zero flow (i.e. flow is zero in the timeseries).
 
@@ -187,12 +193,55 @@ class PowerLaw:
         Returns
         -------
         Parameters
-            The lmfit Parameters with limits set for max h_zero.
+            The lmfit Parameters with limits set for max h0.
         """
         del q
 
-        h_zero_ceiling = min(float(np.min(h)) - 1e-10, self.parameters["h_zero"].max)
-        self.parameters["h_zero"].max = h_zero_ceiling
+        h_min = float(np.min(h))
+        h_max = float(np.max(h))
+        eps = 1e-10
+
+        if self.segments == 1:
+            h0_ceiling = min(h_min - eps, self.parameters["h0"].max)
+            self.parameters["h0"].max = h0_ceiling
+            return self.parameters
+
+        self.parameters["h0"].max = min(
+            h_min - eps, self.parameters["h0"].max
+        )
+
+        # FIXME
+        # TODO need to test properly different scenarios
+        # of this, right not this is not production ready
+        # breakpoint values should also be regularized, and min-max range being dynamic and not fixed
+        # lmfit allow for this I think
+        # when setting breakpoint values we need to take into account
+        # that some can be set to initial values/min/max etc and others not
+
+        break_names = [f"break{idx}" for idx in range(1, self.segments)]
+        break_values = np.array(
+            [self.parameters[name].value for name in break_names], dtype=float
+        )
+        if (
+            not np.all(np.isfinite(break_values))
+            or np.any(break_values <= h_min)
+            or np.any(break_values >= h_max)
+            or np.any(np.diff(break_values) <= 0)
+        ):
+            default_break_values = np.linspace(h_min, h_max, self.segments + 1)[
+                1:-1
+            ]
+            for name, value in zip(break_names, default_break_values, strict=True):
+                self.parameters[name].value = float(value)
+
+        for idx in range(1, self.segments):
+            break_param = self.parameters[f"break{idx}"]
+            break_param.min = max(break_param.min, h_min + eps)
+            break_param.max = min(break_param.max, h_max - eps)
+            self.parameters[f"c{idx + 1}"].max = min(
+                self.parameters[f"c{idx + 1}"].max,
+                break_param.value - eps,
+            )
 
         return self.parameters
 
@@ -218,27 +267,63 @@ class PowerLaw:
             Stage values corresponding to the given discharge.
         """
         del initial_guess
+        if self.segments != 1:
+            raise NotImplementedError(
+                "PowerLaw.inverse() is only implemented for one segment."
+            )
 
         values = self._parameter_values(params)
-        return (np.asarray(q) / values["a"]) ** (1 / values["b"]) + values["h_zero"]
+        return (np.asarray(q) / values["a"]) ** (1 / values["b"]) + values["h0"]
 
-    @staticmethod
-    def _default_parameters() -> Parameters:
+    def derived_parameters(self, params: dict[str, float]) -> dict[str, float]:
+        if self.segments == 1:
+            return {}
+
+        values = self._parameter_values(params)
+        scales = self._scale_parameters(values)
+        return {
+            f"a{idx}": scales[f"a{idx}"] for idx in range(2, self.segments + 1)
+        }
+
+    def _default_parameters(self) -> Parameters:
         parameters = Parameters()
-        parameters.add("a", value=1.0)
-        parameters.add("h_zero", value=0.0)
-        parameters.add("b", value=2.0)
+        if self.segments == 1:
+            parameters.add("a", value=1.0)
+            parameters.add("h0", value=0.0)
+            parameters.add("b", value=2.0)
+            return parameters
+
+        parameters.add("a1", value=1.0)
+        parameters.add("h0", value=0.0)
+        parameters.add("b1", value=2.0)
+        for idx in range(1, self.segments):
+            parameters.add(f"break{idx}", value=float(idx))
+            parameters.add(f"c{idx + 1}", value=0.0)
+            parameters.add(f"b{idx + 1}", value=2.0)
         return parameters
 
     @staticmethod
-    def _power_law(h: np.ndarray, *, a: float, h_zero: float, b: float) -> np.ndarray:
-        return a * (np.asarray(h) - h_zero) ** b
+    def _power_law(h: float | np.ndarray, *, a: float, h0: float, b: float) -> np.ndarray:
+        return a * (np.asarray(h) - h0) ** b
 
     def _func_for_lmfit(
-        self, h: np.ndarray, a: float = 1.0, h_zero: float = 0.0, b: float = 2.0
+        self, h: np.ndarray, a: float = 1.0, h0: float = 0.0, b: float = 2.0
     ) -> np.ndarray:
         """The equation/function that lmfit will fit."""
-        return self._power_law(h, a=a, h_zero=h_zero, b=b)
+        return self._power_law(h, a=a, h0=h0, b=b)
+
+    def _create_lmfit_function(self):
+        param_names = list(self.parameters.keys())
+
+        def func(h, **params):
+            return self.func(h, **params)
+
+        func.__name__ = "power_law"
+        func.argnames = ["h", *param_names]
+        func.kwargs = [
+            (name, self.parameters[name].value) for name in param_names
+        ]
+        return func
 
     def _parameter_values(self, overrides: dict[str, float]) -> dict[str, float]:
         unknown = set(overrides) - set(self.parameters)
@@ -249,3 +334,91 @@ class PowerLaw:
         }
         values.update(overrides)
         return values
+
+    def _segmented_power_law(
+        self, h: np.ndarray, params: dict[str, float]
+    ) -> np.ndarray:
+        h_values = np.asarray(h, dtype=float)
+        scalar_input = h_values.ndim == 0
+        h_array = np.atleast_1d(h_values)
+
+        self._validate_segment_parameters(params, h_array)
+        scales = self._scale_parameters(params)
+
+        discharge = np.empty_like(h_array, dtype=float)
+        breaks = self._break_values(params)
+
+        for idx in range(1, self.segments + 1):
+            if idx == 1:
+                mask = h_array <= breaks[0]
+            elif idx == self.segments:
+                mask = h_array > breaks[-1]
+            else:
+                mask = (h_array > breaks[idx - 2]) & (h_array <= breaks[idx - 1])
+
+            # h0 for first segment, c{idx} for others
+            h_offset_key = "h0" if idx == 1 else f"c{idx}"
+            discharge[mask] = self._power_law(
+                h_array[mask],
+                a=scales[f"a{idx}"],
+                h0=params[h_offset_key],
+                b=params[f"b{idx}"],
+            )
+
+        if scalar_input:
+            return discharge[0]
+        return discharge.reshape(h_values.shape)
+
+    def _scale_parameters(self, params: dict[str, float]) -> dict[str, float]:
+        self._validate_breakpoints(params)
+
+        scales = {"a1": params["a1"]}
+        for idx in range(2, self.segments + 1):
+            boundary = params[f"break{idx - 1}"]
+            current_offset_key = f"c{idx}"
+            previous_offset_key = "h0" if idx - 1 == 1 else f"c{idx - 1}"
+            if params[current_offset_key] >= boundary:
+                raise ValueError(
+                    f"{current_offset_key} must be below the lower stage boundary "
+                    f"for segment {idx}."
+                )
+            previous_discharge = self._power_law(
+                boundary,
+                a=scales[f"a{idx - 1}"],
+                h0=params[previous_offset_key],
+                b=params[f"b{idx - 1}"],
+            )
+            denominator = (boundary - params[current_offset_key]) ** params[f"b{idx}"]
+            scales[f"a{idx}"] = float(previous_discharge / denominator)
+
+        return scales
+
+    def _validate_segment_parameters(
+        self, params: dict[str, float], h: np.ndarray
+    ) -> None:
+        self._validate_breakpoints(params)
+
+        h_min = float(np.min(h))
+        if params["h0"] >= h_min:
+            raise ValueError(
+                "h0 must be below the lower stage boundary for segment 1."
+            )
+
+        for idx in range(2, self.segments + 1):
+            lower_boundary = params[f"break{idx - 1}"]
+            if params[f"c{idx}"] >= lower_boundary:
+                raise ValueError(
+                    f"c{idx} must be below the lower stage boundary "
+                    f"for segment {idx}."
+                )
+
+    def _validate_breakpoints(self, params: dict[str, float]) -> None:
+        breaks = self._break_values(params)
+        if not np.all(np.diff(breaks) > 0):
+            raise ValueError("PowerLaw breakpoints must be strictly increasing.")
+
+    def _break_values(self, params: dict[str, float]) -> np.ndarray:
+        return np.array(
+            [params[f"break{idx}"] for idx in range(1, self.segments)],
+            dtype=float,
+        )

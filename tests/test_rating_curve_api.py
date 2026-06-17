@@ -294,7 +294,7 @@ def test_rating_curve_fit_powerlaw_noisy_data_succeeds(powerlaw_reference_data):
     fit = rc.fit("noisy", model=models.PowerLaw())
 
     assert fit.result_.success
-    assert set(fit.result_.best_values) == {"a", "h_zero", "b"}
+    assert set(fit.result_.best_values) == {"a", "h0", "b"}
 
 
 def test_rating_curve_fit_respects_fixed_powerlaw_parameter(powerlaw_reference_data):
@@ -482,8 +482,8 @@ def test_fit_calculates_error_metrics_from_known_data():
     model = models.PowerLaw()
     model.parameters["a"].value = 1.0
     model.parameters["a"].vary = False
-    model.parameters["h_zero"].value = 0.0
-    model.parameters["h_zero"].vary = False
+    model.parameters["h0"].value = 0.0
+    model.parameters["h0"].vary = False
     model.parameters["b"].value = 1.0
     model.parameters["b"].vary = False
     rc = RatingCurve(data=data, h="stage", q="discharge")
@@ -508,6 +508,35 @@ def test_fit_params_exposes_fitted_parameter_values(powerlaw_reference_data):
 
     assert fit.params_ == pytest.approx(powerlaw_reference_data["true_params"])
     assert fit.derived_params_ == {}
+
+
+def test_fit_exposes_segmented_powerlaw_derived_parameters():
+    true_params = {
+        "a1": 2.0,
+        "h0": 0.0,
+        "b1": 1.0,
+        "break1": 2.0,
+        "c2": 1.0,
+        "b2": 2.0,
+    }
+    stage = np.array([1.0, 1.5, 2.0, 2.5, 3.0])
+    discharge = models.PowerLaw(segments=2).func(stage, **true_params)
+    data = pd.DataFrame({"stage": stage, "discharge": discharge})
+    model = models.PowerLaw(segments=2)
+    model.parameters["a1"].value = 1.0
+    for name, value in true_params.items():
+        if name == "a1":
+            continue
+        model.parameters[name].value = value
+        model.parameters[name].vary = False
+    rc = RatingCurve(data=data, h="stage", q="discharge")
+
+    fit = rc.fit("segmented", model=model)
+
+    assert fit.result_.success
+    assert fit.params_ == pytest.approx(true_params)
+    assert fit.derived_params_ == pytest.approx({"a2": 4.0})
+    np.testing.assert_allclose(fit.predict(np.array([2.0, 3.0])), [4.0, 16.0])
 
 
 def test_fit_active_data_snapshot_is_independent_after_later_filtering(powerlaw_data):
