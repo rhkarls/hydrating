@@ -140,9 +140,7 @@ class PowerLaw:
         """
         values = self._parameter_values(params)
         if self.segments == 1:
-            return self._power_law(
-                h, a=values["a"], h0=values["h0"], b=values["b"]
-            )
+            return self._power_law(h, a=values["a"], h0=values["h0"], b=values["b"])
         return self._segmented_power_law(h, values)
 
     def create_lmfit_model(self) -> Model:
@@ -206,9 +204,7 @@ class PowerLaw:
             self.parameters["h0"].max = h0_ceiling
             return self.parameters
 
-        self.parameters["h0"].max = min(
-            h_min - eps, self.parameters["h0"].max
-        )
+        self.parameters["h0"].max = min(h_min - eps, self.parameters["h0"].max)
 
         # FIXME
         # TODO need to test properly different scenarios
@@ -228,9 +224,7 @@ class PowerLaw:
             or np.any(break_values >= h_max)
             or np.any(np.diff(break_values) <= 0)
         ):
-            default_break_values = np.linspace(h_min, h_max, self.segments + 1)[
-                1:-1
-            ]
+            default_break_values = np.linspace(h_min, h_max, self.segments + 1)[1:-1]
             for name, value in zip(break_names, default_break_values, strict=True):
                 self.parameters[name].value = float(value)
 
@@ -281,9 +275,7 @@ class PowerLaw:
 
         values = self._parameter_values(params)
         scales = self._scale_parameters(values)
-        return {
-            f"a{idx}": scales[f"a{idx}"] for idx in range(2, self.segments + 1)
-        }
+        return {f"a{idx}": scales[f"a{idx}"] for idx in range(2, self.segments + 1)}
 
     def _default_parameters(self) -> Parameters:
         parameters = Parameters()
@@ -303,7 +295,9 @@ class PowerLaw:
         return parameters
 
     @staticmethod
-    def _power_law(h: float | np.ndarray, *, a: float, h0: float, b: float) -> np.ndarray:
+    def _power_law(
+        h: float | np.ndarray, *, a: float, h0: float, b: float
+    ) -> np.ndarray:
         return a * (np.asarray(h) - h0) ** b
 
     def _func_for_lmfit(
@@ -320,9 +314,7 @@ class PowerLaw:
 
         func.__name__ = "power_law"
         func.argnames = ["h", *param_names]
-        func.kwargs = [
-            (name, self.parameters[name].value) for name in param_names
-        ]
+        func.kwargs = [(name, self.parameters[name].value) for name in param_names]
         return func
 
     def _parameter_values(self, overrides: dict[str, float]) -> dict[str, float]:
@@ -400,16 +392,13 @@ class PowerLaw:
 
         h_min = float(np.min(h))
         if params["h0"] >= h_min:
-            raise ValueError(
-                "h0 must be below the lower stage boundary for segment 1."
-            )
+            raise ValueError("h0 must be below the lower stage boundary for segment 1.")
 
         for idx in range(2, self.segments + 1):
             lower_boundary = params[f"break{idx - 1}"]
             if params[f"c{idx}"] >= lower_boundary:
                 raise ValueError(
-                    f"c{idx} must be below the lower stage boundary "
-                    f"for segment {idx}."
+                    f"c{idx} must be below the lower stage boundary for segment {idx}."
                 )
 
     def _validate_breakpoints(self, params: dict[str, float]) -> None:
