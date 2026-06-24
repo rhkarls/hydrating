@@ -119,11 +119,27 @@ class PowerLaw:
         """
         The power law rating curve function.
 
+        For a single segment (or section) rating curve, the function is:
         .. math::
             Q(h) = a \\times (h-h0)^b
 
         where :math:`Q` is discharge, :math:`h` is stage, :math:`h0` is
         stage at zero flow, and :math:`a` and :math:`b` are fitted parameters.
+
+        For a multi-segment rating curve the powerlaw is applied to each segmented, defined by the breakpoint stage.
+        For example, for a two segment rating curve the function is:
+        .. math::
+            Q(h) = \\begin{cases}
+                a_1 \\times (h-h0)^{b_1} & h < break1 \\\\
+                a_2 \\times (h-c_2)^{b_2} & h \\geq break1
+            \\end{cases}
+
+        where :math:`break1` is the stage at which the rating curve changes from the first segment to the second segment.
+
+        For continuity, the second segment and the following segments are defined by the previous segment parameters and the breakpoint stage,
+        so that the rating curve is continuous at the breakpoint stage. For example, for a two segment rating curve, :math:`a_2` is defined as:
+
+        :math:`a_2 = a_1 \\times (break1 - h0)^{b_1} / (break1 - c_2)^{b_2}`.
 
         Parameters
         ----------
@@ -176,7 +192,7 @@ class PowerLaw:
 
     def constrain_parameters(self, h: np.ndarray, q: np.ndarray) -> Parameters:
         """
-        Constraining on the parameters based on observed values.
+        Constraining on the parameters based on observed values and what is physically possible for the function.
         This function sets the maximum value of h0 to the minimum value of h, i.e. stage.
         This is to avoid fitting a rating curve with zero flow stage that is higher than the observed stage with flow, which is not physically possible.
         Avoid using this constrain if the observed stage goes below zero flow (i.e. flow is zero in the timeseries).
@@ -208,6 +224,7 @@ class PowerLaw:
 
         # FIXME
         # TODO need to test properly different scenarios
+        # use expressions?
         # of this, right not this is not production ready
         # breakpoint values should also be regularized, and min-max range being dynamic and not fixed
         # lmfit allow for this I think
@@ -269,6 +286,12 @@ class PowerLaw:
         values = self._parameter_values(params)
         return (np.asarray(q) / values["a"]) ** (1 / values["b"]) + values["h0"]
 
+    def _inverse_segmented_powerlaw(self, q: np.ndarray, params: dict[str, float]):
+        """Use the same inversion method as the single segment power law, but with the parameters of the corresponding segment."""
+        raise NotImplementedError(
+            "PowerLaw._inverse_segmented_powerlaw() is not implemented."
+        )
+
     def derived_parameters(self, params: dict[str, float]) -> dict[str, float]:
         if self.segments == 1:
             return {}
@@ -279,19 +302,29 @@ class PowerLaw:
 
     def _default_parameters(self) -> Parameters:
         parameters = Parameters()
+        eps = 1e-10
         if self.segments == 1:
             parameters.add("a", value=1.0)
             parameters.add("h0", value=0.0)
             parameters.add("b", value=2.0)
+
+            parameters["a"].min = eps
+            parameters["b"].min = eps
+
             return parameters
 
         parameters.add("a1", value=1.0)
         parameters.add("h0", value=0.0)
         parameters.add("b1", value=2.0)
+        parameters["a1"].min = eps
+        parameters["b1"].min = eps
+
         for idx in range(1, self.segments):
             parameters.add(f"break{idx}", value=float(idx))
             parameters.add(f"c{idx + 1}", value=0.0)
             parameters.add(f"b{idx + 1}", value=2.0)
+            parameters[f"b{idx+1}"].min = eps # note that a2.._idx are derived parameters
+
         return parameters
 
     @staticmethod
@@ -313,7 +346,9 @@ class PowerLaw:
             return self.func(h, **params)
 
         func.__name__ = "power_law"
+        # pyrefly: ignore [missing-attribute]
         func.argnames = ["h", *param_names]
+        # pyrefly: ignore [missing-attribute]
         func.kwargs = [(name, self.parameters[name].value) for name in param_names]
         return func
 
@@ -328,7 +363,7 @@ class PowerLaw:
         return values
 
     def _segmented_power_law(
-        self, h: np.ndarray, params: dict[str, float]
+        self, h: np.ndarray | float, params: dict[str, float]
     ) -> np.ndarray:
         h_values = np.asarray(h, dtype=float)
         scalar_input = h_values.ndim == 0

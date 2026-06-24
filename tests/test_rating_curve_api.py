@@ -277,9 +277,7 @@ def test_rating_curve_fit_powerlaw_exact_data_recovers_parameters(
 
     assert fit.result_.success
     assert rc.fits["exact"] is fit
-    assert fit.result_.best_values == pytest.approx(
-        powerlaw_reference_data["true_params"]
-    )
+    assert fit.result_.params == pytest.approx(powerlaw_reference_data["true_params"])
 
 
 def test_rating_curve_fit_powerlaw_noisy_data_succeeds(powerlaw_reference_data):
@@ -294,7 +292,7 @@ def test_rating_curve_fit_powerlaw_noisy_data_succeeds(powerlaw_reference_data):
     fit = rc.fit("noisy", model=models.PowerLaw())
 
     assert fit.result_.success
-    assert set(fit.result_.best_values) == {"a", "h0", "b"}
+    assert set(fit.result_.params) == {"a", "h0", "b"}
 
 
 def test_rating_curve_fit_respects_fixed_powerlaw_parameter(powerlaw_reference_data):
@@ -312,7 +310,7 @@ def test_rating_curve_fit_respects_fixed_powerlaw_parameter(powerlaw_reference_d
     fit = rc.fit("fixed-b", model=model)
 
     assert fit.result_.success
-    assert fit.result_.best_values["b"] == pytest.approx(2.6)
+    assert fit.result_.params["b"] == pytest.approx(2.6)
 
 
 def test_rating_curve_fit_accepts_scalar_uncertainty(powerlaw_reference_data):
@@ -469,7 +467,6 @@ def test_fit_metrics_are_populated_after_fitting(powerlaw_reference_data):
     ]
     assert all(isinstance(metric, float) for metric in metrics)
     assert all(np.isfinite(metric) for metric in metrics)
-    assert fit.r2 == pytest.approx(fit.result_.rsquared)
 
 
 def test_fit_calculates_error_metrics_from_known_data():
@@ -642,14 +639,14 @@ def test_rating_curve_compare_fit_metrics_includes_metric_columns(
         "is_reference",
         "aic",
         "bic",
-        "redchi",
+        "reduced_chi",
         "r2",
         "mean_absolute_error",
         "mean_percentage_error",
         "mean_absolute_percentage_error",
         "delta_aic",
         "delta_bic",
-        "delta_redchi",
+        "delta_reduced_chi",
         "delta_r2",
         "delta_mean_absolute_error",
         "delta_mean_percentage_error",

@@ -10,16 +10,17 @@ from typing import Any, Callable, Hashable, TypeAlias, cast
 
 import numpy as np
 import pandas as pd
+from lmfit import minimize
 
 BooleanMask: TypeAlias = np.ndarray | pd.Series | list[bool]
 WherePredicate: TypeAlias = Callable[[pd.Series], BooleanMask]
 WhereCondition: TypeAlias = Hashable | WherePredicate
 FitSelection: TypeAlias = str | list[str] | tuple[str, ...] | None
 
-COMPARISON_METRICS = (
+FIT_METRICS = (
     "aic",
     "bic",
-    "redchi",
+    "reduced_chi",
     "r2",
     "mean_absolute_error",
     "mean_percentage_error",
@@ -42,7 +43,6 @@ class Fit:
     derived_params_: dict[str, float] = field(init=False)
     aic: float = field(init=False)
     bic: float = field(init=False)
-    redchi: float = field(init=False)
     reduced_chi: float = field(init=False)
     r2: float = field(init=False)
     mean_absolute_error: float = field(init=False)
@@ -58,9 +58,7 @@ class Fit:
         self.derived_params_ = self._derived_parameters()
         self.aic = float(self.result_.aic)
         self.bic = float(self.result_.bic)
-        self.redchi = float(self.result_.redchi)
-        self.reduced_chi = self.redchi
-        self.r2 = float(self.result_.rsquared)
+        self.reduced_chi = float(self.result_.redchi)
         self._calculate_metrics()
 
     def predict(self, h):
@@ -85,11 +83,15 @@ class Fit:
         predicted = self.predict(self.active_data_[self.h_col].to_numpy(dtype=float))
         residuals = predicted - observed
 
+        sse = float(np.sum(residuals**2))
+        tss = float(np.sum((observed - float(np.mean(observed))) ** 2))
+        self.r2 = 1 - (sse / tss) if tss > 0 else np.nan
+
         self.mean_absolute_error = float(np.mean(np.abs(residuals)))
 
         nonzero = observed != 0
         if np.any(nonzero):
-            percentage_errors = residuals[nonzero] / observed[nonzero] * 100.0
+            percentage_errors = residuals[nonzero] / observed[nonzero] * 100
             self.mean_percentage_error = float(np.mean(percentage_errors))
             self.mean_absolute_percentage_error = float(
                 np.mean(np.abs(percentage_errors))
@@ -111,23 +113,70 @@ class LmfitBackend:
 
     name = "lmfit"
 
-    def fit(self, *, model, h, q, uncertainty=None, **options):
-        """Fit a model using lmfit."""
+    def fit(
+        self,
+        *,
+        model,
+        h,
+        q,
+        uncertainty=None,
+        method: str = "least_squares",
+        log_transform: bool = False,
+        **options,
+    ):
+        """Fit a model using lmfit.
+
+        Parameters
+        ----------
+        model: rating model implementing the hydrating model interface
+        h, q: arrays of stage and discharge
+        uncertainty: percent uncertainty (optional)
+        method: optimizer method passed to lmfit.Minimizer.minimize (default 'least_squares')
+        log_transform: if True, minimize differences in log-space (log(model) - log(obs))
+        """
         h_values = np.asarray(h, dtype=float)
         q_values = np.asarray(q, dtype=float)
-        if uncertainty is not None:
-            if "weights" in options:
-                raise ValueError(
-                    "uncertainty cannot be combined with explicit lmfit weights."
-                )
-            options["weights"] = self._weights_from_percent_uncertainty(
-                q_values, uncertainty
+
+        if log_transform and np.any(q_values <= 0):
+            raise ValueError(
+                "log_transform=True requires all observed discharge values to be positive"
             )
 
-        parameters = model.constrain_parameters(h_values, q_values).copy()
-        lmfit_model = model.create_lmfit_model()
+        if uncertainty is not None:
+            # FIXME WEIGHTS ARE DIFFERENT IF WE LOGTRANSFORM
+            # CHANGE THAT IN HERE INSIDE _residuals()  or in _weights... ??
+            weights = self._weights_from_percent_uncertainty(q_values, uncertainty)
+        else:
+            weights = np.full(q_values.shape, 1.0, dtype=float)
 
-        return lmfit_model.fit(q_values, params=parameters, h=h_values, **options)
+        parameters = model.constrain_parameters(h_values, q_values).copy()
+
+        # FIXME CANNOT HAVE "weights" in options, will fail on minimize call
+
+        # Define residual function matching FRC: residuals = log(q_model) - log(q_obs)
+        def _residuals(pars, h_arr, q_arr, weights=weights):
+            pv = pars.valuesdict()
+            q_model = model.func(h_arr, **pv)
+            q_model = np.asarray(q_model, dtype=float)
+            if log_transform:
+                if np.any(q_model <= 0):
+                    raise ValueError(
+                        "Model predicts non-positive discharge values; cannot take log"
+                    )
+                return np.log(q_model) - np.log(
+                    q_arr
+                )  # TODO multiply by residuals by weights array here
+            else:
+                return (
+                    q_model - q_arr
+                )  # TODO multiply by residuals by weights array here
+
+        # Use lmfit.minimize for parity with FRC implementation
+        result = minimize(
+            _residuals, parameters, method=method, args=(h_values, q_values), **options
+        )
+
+        return result
 
     @staticmethod
     def _weights_from_percent_uncertainty(q, uncertainty) -> np.ndarray:
@@ -216,6 +265,8 @@ class RatingCurve:
         uncertainty=None,
         backend: str = "lmfit",
         overwrite: bool = False,
+        method: str = "least_squares",
+        log_transform: bool = True,
         **lmfit_options,
     ) -> Fit:
         """
@@ -256,6 +307,8 @@ class RatingCurve:
             h=active_data[self.h_col].to_numpy(),
             q=active_data[self.q_col].to_numpy(),
             uncertainty=uncertainty_values,
+            method=method,
+            log_transform=log_transform,
             **lmfit_options,
         )
         fit = Fit(
@@ -346,7 +399,7 @@ class RatingCurve:
             row.update(
                 {
                     f"delta_{metric}": metrics[metric] - reference_metrics[metric]
-                    for metric in COMPARISON_METRICS
+                    for metric in FIT_METRICS
                 }
             )
             rows.append(row)
@@ -549,7 +602,7 @@ class RatingCurve:
 
     @staticmethod
     def _fit_metric_values(fit: Fit) -> dict[str, float]:
-        return {metric: float(getattr(fit, metric)) for metric in COMPARISON_METRICS}
+        return {metric: float(getattr(fit, metric)) for metric in FIT_METRICS}
 
     @staticmethod
     def _coerce_stage_values(stage) -> np.ndarray:
